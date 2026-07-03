@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="theme-color" content="#0F2A33"/>
+<title>MovePA Motorista</title>
+<link rel="manifest" href="manifest.json"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --river-deep:#0F2A33;
+    --river-mid:#173B47;
+    --river-line:#26505F;
+    --ochre:#C1652F;
+    --ochre-bright:#E07A3E;
+    --sand:#EFE6D6;
+    --sand-dim:#B9C4C3;
+    --green:#4C9A6A;
+    --red:#C1392B;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--river-deep);font-family:'Inter',sans-serif;color:var(--sand);overflow:hidden;}
+  #app{height:100dvh;display:flex;flex-direction:column;}
+
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 20px;background:var(--river-mid);border-bottom:1px solid var(--river-line);
+  }
+  .brand{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:.2px;}
+  .brand span{color:var(--ochre-bright);}
+  .status-pill{
+    display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;
+    font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;
+    background:rgba(255,255,255,0.06);
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--sand-dim);}
+  .status-pill.online .dot{background:var(--green);box-shadow:0 0 0 0 rgba(76,154,106,.6);animation:pulse 1.8s infinite;}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(76,154,106,.5);}
+    70%{box-shadow:0 0 0 8px rgba(76,154,106,0);}
+    100%{box-shadow:0 0 0 0 rgba(76,154,106,0);}
+  }
+
+  /* LOGIN */
+  #login-screen{flex:1;display:flex;flex-direction:column;justify-content:center;padding:32px;gap:22px;}
+  .login-head h1{font-family:'Space Grotesk',sans-serif;font-size:26px;margin:0 0 6px;}
+  .login-head p{margin:0;color:var(--sand-dim);font-size:14px;}
+  select, input{
+    width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--river-line);
+    background:var(--river-mid);color:var(--sand);font-size:16px;font-family:'Inter',sans-serif;
+  }
+  select:focus, input:focus{outline:2px solid var(--ochre);}
+  label{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--sand-dim);margin-bottom:6px;display:block;}
+  .field{margin-bottom:16px;}
+  button{
+    cursor:pointer;border:none;border-radius:12px;font-family:'Inter',sans-serif;font-weight:600;
+  }
+  .btn-primary{
+    background:var(--ochre);color:#fff;padding:15px;font-size:16px;width:100%;
+  }
+  .btn-primary:active{background:var(--ochre-bright);}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+  #login-error{color:var(--red);font-size:13px;min-height:18px;}
+
+  /* MAIN */
+  #main-screen{flex:1;display:none;flex-direction:column;position:relative;}
+  #map{flex:1;width:100%;}
+  .toggle-bar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 20px;background:var(--river-mid);border-top:1px solid var(--river-line);
+  }
+  .toggle-label{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;}
+  .toggle-sub{font-size:12px;color:var(--sand-dim);margin-top:2px;}
+  .switch{position:relative;width:52px;height:30px;flex-shrink:0;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{position:absolute;inset:0;background:var(--river-line);border-radius:999px;transition:.2s;}
+  .slider:before{content:"";position:absolute;width:24px;height:24px;left:3px;top:3px;background:var(--sand);border-radius:50%;transition:.2s;}
+  input:checked + .slider{background:var(--green);}
+  input:checked + .slider:before{transform:translateX(22px);}
+
+  /* RIDE REQUEST OVERLAY */
+  #ride-request{
+    display:none;position:absolute;left:16px;right:16px;bottom:96px;
+    background:var(--river-mid);border:1px solid var(--ochre);border-radius:var(--radius);
+    padding:18px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  }
+  #ride-request .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--ochre-bright);font-weight:700;}
+  #ride-request h3{margin:6px 0 4px;font-family:'Space Grotesk',sans-serif;font-size:18px;}
+  #ride-request p{margin:0 0 14px;color:var(--sand-dim);font-size:13px;}
+  .ride-actions{display:flex;gap:10px;}
+  .btn-decline{flex:1;background:transparent;border:1px solid var(--river-line);color:var(--sand);padding:12px;}
+  .btn-accept{flex:2;background:var(--green);color:#fff;padding:12px;}
+
+  /* ACTIVE RIDE PANEL */
+  #active-ride{
+    display:none;position:absolute;left:16px;right:16px;bottom:96px;
+    background:var(--river-mid);border:1px solid var(--river-line);border-radius:var(--radius);
+    padding:18px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  }
+  #active-ride .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--sand-dim);font-weight:700;}
+  #active-ride h3{margin:6px 0 4px;font-family:'Space Grotesk',sans-serif;font-size:17px;}
+  #active-ride p{margin:0 0 14px;color:var(--sand-dim);font-size:13px;}
+  .btn-full{width:100%;padding:13px;background:var(--ochre);color:#fff;}
+  .btn-finish{width:100%;padding:13px;background:var(--green);color:#fff;}
+
+  .hint{position:absolute;top:16px;left:16px;right:16px;background:rgba(15,42,51,0.92);
+    border:1px solid var(--river-line);padding:12px 14px;border-radius:12px;font-size:13px;color:var(--sand-dim);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">Move<span>PA</span> Motorista</div>
+    <div class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">Offline</span></div>
+  </div>
+
+  <!-- LOGIN -->
+  <div id="login-screen">
+    <div class="login-head">
+      <h1>Entrar</h1>
+      <p>Escolha seu nome e digite seu código de acesso.</p>
+    </div>
+    <div class="field">
+      <label>Motorista</label>
+      <select id="motoristaSelect"><option value="">Carregando...</option></select>
+    </div>
+    <div class="field">
+      <label>Código (PIN)</label>
+      <input type="password" id="pinInput" inputmode="numeric" maxlength="6" placeholder="••••"/>
+    </div>
+    <div id="login-error"></div>
+    <button class="btn-primary" id="loginBtn">Entrar</button>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main-screen">
+    <div id="map"></div>
+    <div class="hint" id="gpsHint">Ativando localização em tempo real...</div>
+
+    <div id="ride-request">
+      <div class="eyebrow">Nova corrida</div>
+      <h3 id="reqName">—</h3>
+      <p id="reqInfo">—</p>
+      <div class="ride-actions">
+        <button class="btn-decline" id="declineBtn">Recusar</button>
+        <button class="btn-accept" id="acceptBtn">Aceitar</button>
+      </div>
+    </div>
+
+    <div id="active-ride">
+      <div class="eyebrow" id="activeEyebrow">Corrida aceita</div>
+      <h3 id="activeName">—</h3>
+      <p id="activeInfo">—</p>
+      <button class="btn-full" id="startBtn">Iniciar corrida</button>
+      <button class="btn-finish" id="finishBtn" style="display:none;">Finalizar corrida</button>
+    </div>
+
+    <div class="toggle-bar">
+      <div>
+        <div class="toggle-label">Ficar online</div>
+        <div class="toggle-sub" id="toggleSub">Você está offline</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="onlineToggle"/>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIGURAÇÃO — dados do projeto Supabase
+// ============================================================
+const SUPABASE_URL = "https://qrvhvcdxnbwukzuvhstp.supabase.co";
+const SUPABASE_KEY = "sb_publishable_WsfWSu6v9MaC_8R34dWL5g_Ao6ranz3";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let motorista = null;       // linha do motorista logado
+let watchId = null;
+let map, driverMarker, pickupMarker;
+let currentRide = null;     // corrida em andamento/pendente aceite
+let rideChannel = null;
+
+const $ = (id) => document.getElementById(id);
+
+// ---------- LOGIN: carrega lista de motoristas ----------
+async function carregarMotoristas(){
+  const { data, error } = await sb.from("motoristas").select("id, nome").order("nome");
+  const select = $("motoristaSelect");
+  select.innerHTML = "";
+  if(error || !data || data.length === 0){
+    select.innerHTML = `<option value="">Nenhum motorista cadastrado</option>`;
+    return;
+  }
+  data.forEach(m=>{
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.nome;
+    select.appendChild(opt);
+  });
+}
+carregarMotoristas();
+
+$("loginBtn").addEventListener("click", async ()=>{
+  const id = $("motoristaSelect").value;
+  const pin = $("pinInput").value.trim();
+  $("login-error").textContent = "";
+  if(!id || !pin){ $("login-error").textContent = "Escolha seu nome e digite o PIN."; return; }
+
+  $("loginBtn").disabled = true;
+  $("loginBtn").textContent = "Entrando...";
+
+  const { data, error } = await sb.from("motoristas").select("*").eq("id", id).eq("pin", pin).single();
+
+  $("loginBtn").disabled = false;
+  $("loginBtn").textContent = "Entrar";
+
+  if(error || !data){
+    $("login-error").textContent = "PIN incorreto. Tente novamente.";
+    return;
+  }
+  motorista = data;
+  $("login-screen").style.display = "none";
+  $("main-screen").style.display = "flex";
+  iniciarApp();
+});
+
+// ---------- APP PRINCIPAL ----------
+function iniciarApp(){
+  map = L.map("map", { zoomControl:false }).setView([-9.3986, -38.2085], 14); // Paulo Afonso, BA
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  ativarGPS();
+  escutarNovasCorridas();
+
+  $("onlineToggle").addEventListener("change", async (e)=>{
+    const ligar = e.target.checked;
+    const novoStatus = ligar ? "online" : "offline";
+    await sb.from("motoristas").update({ status: novoStatus }).eq("id", motorista.id);
+    atualizarStatusUI(novoStatus);
+  });
+
+  $("declineBtn").addEventListener("click", recusarCorrida);
+  $("acceptBtn").addEventListener("click", aceitarCorrida);
+  $("startBtn").addEventListener("click", iniciarCorrida);
+  $("finishBtn").addEventListener("click", finalizarCorrida);
+}
+
+function atualizarStatusUI(status){
+  const pill = $("statusPill");
+  const text = $("statusText");
+  const sub = $("toggleSub");
+  pill.classList.toggle("online", status !== "offline");
+  if(status === "offline"){ text.textContent = "Offline"; sub.textContent = "Você está offline"; }
+  else if(status === "online"){ text.textContent = "Online"; sub.textContent = "Aguardando corridas..."; }
+  else if(status === "em_corrida"){ text.textContent = "Em corrida"; sub.textContent = "Corrida em andamento"; }
+}
+
+// ---------- GPS REAL ----------
+function ativarGPS(){
+  if(!navigator.geolocation){
+    $("gpsHint").textContent = "Este navegador não suporta GPS.";
+    return;
+  }
+  watchId = navigator.geolocation.watchPosition(async (pos)=>{
+    const { latitude, longitude } = pos.coords;
+    $("gpsHint").style.display = "none";
+
+    if(!driverMarker){
+      const icon = L.divIcon({className:"", html:`<div style="width:18px;height:18px;border-radius:50%;background:#E07A3E;border:3px solid #fff;box-shadow:0 0 0 4px rgba(224,122,62,0.35);"></div>`});
+      driverMarker = L.marker([latitude, longitude], { icon }).addTo(map);
+      map.setView([latitude, longitude], 15);
+    } else {
+      driverMarker.setLatLng([latitude, longitude]);
+    }
+
+    if(motorista){
+      await sb.from("motoristas").update({
+        lat: latitude, lng: longitude, atualizado_em: new Date().toISOString()
+      }).eq("id", motorista.id);
+    }
+  }, (err)=>{
+    $("gpsHint").style.display = "block";
+    $("gpsHint").textContent = "Não foi possível acessar sua localização. Ative o GPS e permita o acesso.";
+  }, { enableHighAccuracy:true, maximumAge:5000, timeout:15000 });
+}
+
+// ---------- ESCUTA NOVAS CORRIDAS (tempo real) ----------
+function escutarNovasCorridas(){
+  sb.channel("corridas-pendentes")
+    .on("postgres_changes", { event:"INSERT", schema:"public", table:"corridas" }, (payload)=>{
+      const corrida = payload.new;
+      if(corrida.status === "pendente" && !currentRide){
+        mostrarPedido(corrida);
+      }
+    })
+    .subscribe();
+}
+
+function mostrarPedido(corrida){
+  currentRide = corrida;
+  $("reqName").textContent = corrida.passageiro_nome;
+  $("reqInfo").textContent = `Origem: ${corrida.origem_endereco || "local marcado no mapa"}`;
+  $("ride-request").style.display = "block";
+
+  if(pickupMarker) map.removeLayer(pickupMarker);
+  pickupMarker = L.marker([corrida.origem_lat, corrida.origem_lng]).addTo(map);
+}
+
+async function recusarCorrida(){
+  $("ride-request").style.display = "none";
+  currentRide = null;
+}
+
+async function aceitarCorrida(){
+  const { data, error } = await sb.from("corridas")
+    .update({ motorista_id: motorista.id, status:"aceita", aceita_em:new Date().toISOString() })
+    .eq("id", currentRide.id).eq("status","pendente").select().single();
+
+  if(error || !data){
+    alert("Essa corrida já foi aceita por outro motorista.");
+    $("ride-request").style.display = "none";
+    currentRide = null;
+    return;
+  }
+
+  currentRide = data;
+  await sb.from("motoristas").update({ status:"em_corrida" }).eq("id", motorista.id);
+  atualizarStatusUI("em_corrida");
+
+  $("ride-request").style.display = "none";
+  $("activeEyebrow").textContent = "Corrida aceita — a caminho do passageiro";
+  $("activeName").textContent = currentRide.passageiro_nome;
+  $("activeInfo").textContent = `Telefone: ${currentRide.passageiro_telefone}`;
+  $("startBtn").style.display = "block";
+  $("finishBtn").style.display = "none";
+  $("active-ride").style.display = "block";
+}
+
+async function iniciarCorrida(){
+  await sb.from("corridas").update({ status:"em_andamento", iniciada_em:new Date().toISOString() }).eq("id", currentRide.id);
+  $("activeEyebrow").textContent = "Corrida em andamento";
+  $("startBtn").style.display = "none";
+  $("finishBtn").style.display = "block";
+}
+
+async function finalizarCorrida(){
+  await sb.from("corridas").update({ status:"finalizada", finalizada_em:new Date().toISOString() }).eq("id", currentRide.id);
+  await sb.from("motoristas").update({ status:"online" }).eq("id", motorista.id);
+  atualizarStatusUI("online");
+  $("onlineToggle").checked = true;
+  $("active-ride").style.display = "none";
+  if(pickupMarker){ map.removeLayer(pickupMarker); pickupMarker = null; }
+  currentRide = null;
+}
+
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>
